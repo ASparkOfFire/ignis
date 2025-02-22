@@ -5,14 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	types "github.com/ASparkOfFire/ignis/proto"
 	"github.com/ASparkOfFire/ignis/runtime"
 	"github.com/ASparkOfFire/ignis/sdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/justincormack/go-memfd"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 )
@@ -90,20 +92,28 @@ func WASIWrapper(wasmFile string) gin.HandlerFunc {
 			return
 		}
 		buf = buf[:n]
+		var protoResp types.FDResponse
 
-		var resp sdk.FDResponse
-		resp, err = sdk.DecodeFromBinary(buf)
+		err = proto.Unmarshal(buf, &protoResp)
 		if err != nil {
 			log.Printf("Failed to decode response: %v\n", err)
 			c.JSON(500, gin.H{"error": "Failed to decode response"})
 			return
 		}
-
+		header := make(http.Header)
+		for k, v := range protoResp.Header {
+			header[k] = v.Fields
+		}
+		resp := sdk.FDResponse{
+			Headers:    header,
+			Body:       protoResp.Body,
+			StatusCode: int(protoResp.StatusCode),
+			Length:     int(protoResp.Length),
+		}
 		// Set response headers
 		c.Status(resp.StatusCode)
 		c.Header("Content-Length", strconv.Itoa(resp.Length))
 		for k, v := range resp.Headers {
-			fmt.Printf("%s: %s\n", k, v)
 			for _, val := range v {
 				c.Header(k, val)
 			}

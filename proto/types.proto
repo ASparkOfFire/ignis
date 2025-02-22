@@ -1,0 +1,14 @@
+syntax = "proto3";
+package proto;
+option go_package = ".com/ASparkOfFire/ignis/proto";
+
+message FDResponse{
+  bytes Body = 1;
+  int32 StatusCode = 2;
+  int32 Length = 3;
+  map<string, HeaderFields> Header = 4;
+}
+
+message HeaderFields {
+  repeated string fields = 1;
+}

@@ -2,22 +2,14 @@ package sdk
 
 import (
 	"bytes"
-	"encoding/gob"
 	"encoding/json"
+	types "github.com/ASparkOfFire/ignis/proto"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"sync"
 )
-
-var once sync.Once
-
-func registerGobTypes() {
-	once.Do(func() {
-		gob.Register(FDResponse{})
-	})
-}
 
 type Request struct {
 	Method           string      `json:"method,omitempty"`
@@ -33,31 +25,9 @@ type Request struct {
 
 type FDResponse struct {
 	Headers    http.Header
-	Body       []byte // Change from bytes.Buffer to []byte
+	Body       []byte
 	StatusCode int
 	Length     int
-}
-
-// Encode to binary
-func (w *FDResponse) encodeToBinary() ([]byte, error) {
-	registerGobTypes()
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-	err := encoder.Encode(w)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// Decode from binary
-func DecodeFromBinary(data []byte) (FDResponse, error) {
-	registerGobTypes()
-	var resp FDResponse
-	buf := bytes.NewBuffer(data)
-	decoder := gob.NewDecoder(buf)
-	err := decoder.Decode(&resp)
-	return resp, err
 }
 
 func NewFDResponse() *FDResponse {
@@ -85,14 +55,24 @@ func Handle(h http.Handler) {
 	}
 
 	h.ServeHTTP(w, r) // execute the user's handler
-
 	w.Length = len(w.Body)
-	b, err = w.encodeToBinary()
+	protoResp := types.FDResponse{
+		Body:       w.Body,
+		StatusCode: int32(w.StatusCode),
+		Length:     int32(w.Length),
+		Header:     make(map[string]*types.HeaderFields),
+	}
+	for k, v := range w.Headers {
+		protoResp.Header[k] = &types.HeaderFields{Fields: v}
+	}
+
+	b, err = proto.Marshal(&protoResp)
 	if err != nil {
 		log.Printf("Error encoding response: %s", err)
 	}
-	if _, err := os.Stdout.Write(b); err != nil {
-		log.Printf("Error writing response: %s", err)
+	n, err := os.Stdout.Write(b)
+	if err != nil || n != len(b) {
+		log.Printf("Error writing response: %s, bytes written: %d", err, n)
 	}
 }
 

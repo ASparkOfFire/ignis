@@ -11,11 +11,19 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
+//go:generate stringer --type RuntimeEngine
+type RuntimeEngine int
+
+const (
+	RuntimeEngineGo RuntimeEngine = iota
+	RuntimeEngineJS
+)
+
 // Args defines the configuration for creating a new Runtime instance.
 type Args struct {
 	Stdout       io.Writer
 	DeploymentID uuid.UUID
-	Engine       string
+	Engine       RuntimeEngine
 	Blob         []byte
 	Cache        wazero.CompilationCache
 }
@@ -25,7 +33,7 @@ type Runtime struct {
 	stdout       io.Writer
 	ctx          context.Context
 	deploymentID uuid.UUID
-	engine       string
+	engine       RuntimeEngine
 	mod          wazero.CompiledModule
 	runtime      wazero.Runtime
 }
@@ -55,7 +63,21 @@ func New(ctx context.Context, args Args) (*Runtime, error) {
 }
 
 // Invoke executes the compiled WebAssembly module with provided input and environment variables.
-func (r *Runtime) Invoke(stdin io.Reader, env map[string]string, args ...string) error {
+func (r *Runtime) Invoke(stdin io.Reader, env map[string]string, script []byte, args ...string) error {
+	switch r.engine {
+	case RuntimeEngineGo:
+		// do nothing
+	case RuntimeEngineJS:
+		var jsRuntimeArguments []string
+		if len(script) == 0 {
+			return fmt.Errorf("script argument is required for JS runtime")
+		}
+		jsRuntimeArguments = append(jsRuntimeArguments, "", "-e", string(script))
+		args = append(jsRuntimeArguments, args...)
+	default:
+		return fmt.Errorf("invalid runtime engine %d", r.engine)
+	}
+
 	modConf := wazero.NewModuleConfig().
 		WithStdin(stdin).
 		WithStdout(r.stdout).

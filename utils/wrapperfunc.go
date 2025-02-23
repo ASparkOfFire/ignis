@@ -86,7 +86,7 @@ func executeWASM(reqPayload []byte, wasmBytes []byte) (*types.FDResponse, error)
 	rt, err := runtime.New(context.Background(), runtime.Args{
 		Stdout:       fd,
 		DeploymentID: uuid.UUID{},
-		Engine:       "go",
+		Engine:       runtime.RuntimeEngineGo,
 		Blob:         wasmBytes,
 		Cache:        nil,
 	})
@@ -94,7 +94,7 @@ func executeWASM(reqPayload []byte, wasmBytes []byte) (*types.FDResponse, error)
 		return nil, fmt.Errorf("failed to initialize WASM runtime: %w", err)
 	}
 
-	if err := rt.Invoke(bytes.NewReader(reqPayload), nil); err != nil {
+	if err := rt.Invoke(bytes.NewReader(reqPayload), nil, nil); err != nil {
 		return nil, fmt.Errorf("failed to invoke WASM runtime: %w", err)
 	}
 

@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"bytes"
-	"encoding/json"
 	types "github.com/ASparkOfFire/ignis/proto"
 	"google.golang.org/protobuf/proto"
 	"io"
@@ -11,27 +10,15 @@ import (
 	"os"
 )
 
-type Request struct {
-	Method           string      `json:"method,omitempty"`
-	Header           http.Header `json:"header,omitempty"`
-	Body             []byte      `json:"body,omitempty"`
-	ContentLength    int64       `json:"content_length,omitempty"`
-	TransferEncoding []string    `json:"transfer_encoding,omitempty"`
-	Host             string      `json:"host,omitempty"`
-	RemoteAddr       string      `json:"remote_addr,omitempty"`
-	RequestURI       string      `json:"request_uri,omitempty"`
-	Pattern          string      `json:"pattern,omitempty"`
-}
-
-type FDResponse struct {
+type Response struct {
 	Headers    http.Header
 	Body       []byte
 	StatusCode int
 	Length     int
 }
 
-func NewFDResponse() *FDResponse {
-	return &FDResponse{
+func NewFDResponse() *Response {
+	return &Response{
 		StatusCode: http.StatusOK,
 		Headers:    make(http.Header),
 	}
@@ -44,11 +31,12 @@ func Handle(h http.Handler) {
 	}
 	w := NewFDResponse()
 
-	var req Request
-	if err := json.Unmarshal(b, &req); err != nil {
+	var req types.FDRequest
+	if err := proto.Unmarshal(b, &req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
 	r, err := http.NewRequest(req.Method, req.RequestURI, bytes.NewReader(req.Body))
 	if err != nil {
 		log.Fatal(err)
@@ -76,15 +64,15 @@ func Handle(h http.Handler) {
 	}
 }
 
-func (w *FDResponse) Header() http.Header {
+func (w *Response) Header() http.Header {
 	return w.Headers
 }
 
-func (w *FDResponse) Write(b []byte) (n int, err error) {
+func (w *Response) Write(b []byte) (n int, err error) {
 	w.Body = append(w.Body, b...) // Store as []byte
 	return len(b), nil
 }
 
-func (w *FDResponse) WriteHeader(status int) {
+func (w *Response) WriteHeader(status int) {
 	w.StatusCode = status
 }

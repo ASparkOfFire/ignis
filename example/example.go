@@ -72,9 +72,17 @@ func HandleGetUsers(c *gin.Context) {
 func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.GET("/", HandleRoot)
-	router.GET("/user/:id", HandleGetUser)
-	router.GET("/user", HandleGetUsers)
 
+	v1 := router.Group("/api/v1")
+
+	v1.GET("/", HandleRoot)
+	v1.GET("/user/:id", HandleGetUser)
+	v1.GET("/user", HandleGetUsers)
+	v1.GET("/favicon.ico", func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusOK, gin.H{
+			"msg": "No favicon for noobs",
+		})
+		return
+	})
 	sdk.Handle(router)
 }

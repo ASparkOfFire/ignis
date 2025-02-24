@@ -26,3 +26,7 @@ go.work.sum
 
 # intellij idea folder
 .idea/
+
+node_modules/
+example/go/example.wasm
+example/js/dist/

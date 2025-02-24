@@ -79,6 +79,8 @@ func New(ctx context.Context, args Args) (*Runtime, error) {
 
 // Invoke executes the compiled WebAssembly module with provided input and environment variables.
 func (r *Runtime) Invoke(stdin io.Reader, env map[string]string, script []byte, args ...string) error {
+	defer r.Close()
+
 	switch r.engine {
 	case RuntimeEngineWASM:
 	case RuntimeEngineJS:
@@ -107,7 +109,6 @@ func (r *Runtime) Invoke(stdin io.Reader, env map[string]string, script []byte, 
 	if err != nil {
 		return fmt.Errorf("failed to instantiate module: %w", err)
 	}
-
 	return nil
 }
 

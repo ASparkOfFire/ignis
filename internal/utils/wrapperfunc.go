@@ -15,7 +15,6 @@ import (
 	"github.com/ASparkOfFire/ignis/internal/runtime"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/justincormack/go-memfd"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -73,11 +72,8 @@ func buildRequestPayload(c *gin.Context) ([]byte, error) {
 
 // executeWASM runs the WASM binary and returns the parsed response.
 func executeWASM(reqPayload, wasmBytes []byte, cache cache.ModCache[uuid.UUID], engine runtime.RuntimeEngine, id uuid.UUID) (*types.FDResponse, error) {
-	fd, err := memfd.Create()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create in-memory file descriptor: %w", err)
-	}
-	defer fd.Close()
+	// create a new buffer for output
+	fd := new(bytes.Buffer)
 
 	rt, err := runtime.New(context.Background(), runtime.Args{
 		Stdout:       fd,
@@ -99,7 +95,7 @@ func executeWASM(reqPayload, wasmBytes []byte, cache cache.ModCache[uuid.UUID], 
 		return nil, fmt.Errorf("failed to invoke WASM runtime: %w", err)
 	}
 
-	responseBytes, err := readMemfd(fd)
+	responseBytes, err := readStdout(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -107,12 +103,8 @@ func executeWASM(reqPayload, wasmBytes []byte, cache cache.ModCache[uuid.UUID], 
 	return parseWASMResponse(responseBytes)
 }
 
-// readMemfd reads and returns data from the in-memory file descriptor.
-func readMemfd(fd *memfd.Memfd) ([]byte, error) {
-	if _, err := fd.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek file descriptor: %w", err)
-	}
-
+// readStdout reads and returns data from the in-memory file descriptor.
+func readStdout(fd *bytes.Buffer) ([]byte, error) {
 	buf := make([]byte, 4096) // Adjust buffer size as needed
 	n, err := fd.Read(buf)
 	if err != nil && err != io.EOF {

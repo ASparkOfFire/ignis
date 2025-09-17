@@ -182,35 +182,32 @@ func (r *Runtime) setupEnhancedWASI() error {
 }
 
 // Invoke executes the compiled WebAssembly module with provided input and environment variables.
+// It combines previous invokeWASM and invokeJS logic, preserving their behaviors.
 func (r *Runtime) Invoke(stdin io.Reader, env map[string]string, script []byte, args ...string) error {
 	defer r.Close()
 
 	switch r.engine {
 	case RuntimeEngineWASM:
-		return r.invokeWASM(stdin, env, args...)
+		return r._invoke(stdin, env, nil, args...)
 	case RuntimeEngineJS:
-		return r.invokeJS(stdin, env, script, args...)
+		return r._invoke(stdin, env, script, args...)
 	default:
 		return fmt.Errorf("invalid runtime engine %d", r.engine)
 	}
 }
 
-// invokeWASM handles WASM module execution - preserving stdin/stdout args,
-// but uses pipes under the hood to connect to WASI stdio.
-func (r *Runtime) invokeWASM(stdin io.Reader, env map[string]string, args ...string) error {
-	// Create OS pipes for stdin
+// _invoke() implements combined logic for WASM and JS runtimes.
+func (r *Runtime) _invoke(stdin io.Reader, env map[string]string, script []byte, args ...string) error {
 	rStdin, wStdin, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
-
-	// Create OS pipes for stdout
 	rStdout, wStdout, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	// Asynchronously copy from provided stdin to pipe writer (wStdin)
+	// Async copy from user-provided stdin to pipe writer
 	go func() {
 		defer wStdin.Close()
 		if _, err := io.Copy(wStdin, stdin); err != nil {
@@ -218,7 +215,7 @@ func (r *Runtime) invokeWASM(stdin io.Reader, env map[string]string, args ...str
 		}
 	}()
 
-	// Asynchronously copy from pipe reader (rStdout) to provided stdout
+	// Async copy from pipe reader to user stdout
 	go func() {
 		defer rStdout.Close()
 		if _, err := io.Copy(r.stdout, rStdout); err != nil {
@@ -226,7 +223,6 @@ func (r *Runtime) invokeWASM(stdin io.Reader, env map[string]string, args ...str
 		}
 	}()
 
-	// Setup WASI with pipe file descriptors for stdio
 	builder := imports.NewBuilder().
 		WithName(fmt.Sprintf("deployment-%s", r.deploymentID.String())).
 		WithSocketsExtension("auto", r.mod).
@@ -238,54 +234,39 @@ func (r *Runtime) invokeWASM(stdin io.Reader, env map[string]string, args ...str
 		return fmt.Errorf("failed to instantiate enhanced WASI: %w", err)
 	}
 	defer system.Close(ctx)
-
-	// Update context to one returned by builder (might contain WASI setup)
 	r.ctx = ctx
 
-	// Configure module config with args/env, no explicit stdin/stdout/stderr as WASI system handles it
-	modConf := wazero.NewModuleConfig()
-	if len(args) > 0 {
-		modConf = modConf.WithArgs(args...)
+	// For JS, prepend the embedded script to args
+	if r.engine == RuntimeEngineJS {
+		if len(script) == 0 {
+			return fmt.Errorf("script argument is required for JS runtime")
+		}
+		jsArgs := []string{"", "-e", string(script)}
+		args = append(jsArgs, args...)
 	}
+
+	// Build module config with shared pattern
+	modConf := wazero.NewModuleConfig().
+		WithArgs(args...)
+
+	// set environment variables
 	for k, v := range env {
 		modConf = modConf.WithEnv(k, v)
+	}
+
+	// Set stdio bindings conditionally:
+	if r.engine == RuntimeEngineJS {
+		// JS runtime: direct user streams
+		modConf = modConf.WithStdin(stdin).WithStdout(r.stdout).WithStderr(os.Stderr)
+	} else {
+		// WASM runtime: stdio handled by pipes (no explicit attached io.Reader/io.Writer)
 	}
 
 	instance, err := r.runtime.InstantiateModule(ctx, r.mod, modConf)
 	if err != nil {
-		return fmt.Errorf("failed to instantiate WASM module: %w", err)
+		return fmt.Errorf("failed to instantiate module: %w", err)
 	}
 	defer instance.Close(ctx)
-
-	return nil
-}
-
-// invokeJS handles JavaScript execution
-func (r *Runtime) invokeJS(stdin io.Reader, env map[string]string, script []byte, args ...string) error {
-	if len(script) == 0 {
-		return fmt.Errorf("script argument is required for JS runtime")
-	}
-
-	var jsRuntimeArguments []string
-	jsRuntimeArguments = append(jsRuntimeArguments, "", "-e", string(script))
-	args = append(jsRuntimeArguments, args...)
-
-	modConf := wazero.NewModuleConfig().
-		WithStdin(stdin).
-		WithStdout(r.stdout).
-		WithStderr(os.Stderr).
-		WithArgs(args...)
-
-	// Add environment variables
-	for k, v := range env {
-		modConf = modConf.WithEnv(k, v)
-	}
-
-	instance, err := r.runtime.InstantiateModule(r.ctx, r.mod, modConf)
-	if err != nil {
-		return fmt.Errorf("failed to instantiate JS module: %w", err)
-	}
-	defer instance.Close(r.ctx)
 
 	return nil
 }

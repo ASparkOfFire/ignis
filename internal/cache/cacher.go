@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"github.com/tetratelabs/wazero"
+	"github.com/ignis-runtime/wazero"
 )
 
 // Cacher interface for cache operations

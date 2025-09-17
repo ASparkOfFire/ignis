@@ -1,11 +1,16 @@
 package main
 
 import (
-	"github.com/ASparkOfFire/ignis/internal/sdk"
-	"github.com/gin-gonic/gin"
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/ASparkOfFire/ignis/sdk"
+
+	"github.com/gin-gonic/gin"
 )
 
 func HandleRoot(c *gin.Context) {
@@ -68,6 +73,31 @@ func HandleGetUsers(c *gin.Context) {
 	})
 	return
 }
+func HandleJoke(c *gin.Context) {
+	client := http.DefaultClient
+	// Make a request using IP address directly
+	req, err := http.NewRequest("GET", "https://icanhazdadjoke.com", nil)
+	if err != nil {
+		log.Printf("Error creating request: %v\n", err)
+		return
+	}
+
+	// Set the Host header to the original domain
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error making HTTP request: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		fmt.Println("Error while unmarshaling response: ", err)
+	}
+	c.AbortWithStatusJSON(http.StatusOK, response)
+}
 
 func main() {
 	gin.SetMode(gin.ReleaseMode)
@@ -84,5 +114,6 @@ func main() {
 		})
 		return
 	})
-	sdk.Handle(router)
+	v1.GET("/joke", HandleJoke)
+	sdk.Handle(router, nil) // nil will use os.Stdin as fallback
 }

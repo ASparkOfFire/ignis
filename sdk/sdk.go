@@ -2,12 +2,15 @@ package sdk
 
 import (
 	"bytes"
-	types "github.com/ASparkOfFire/ignis/internal/proto"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"log"
 	"net/http"
 	"os"
+
+	types "github.com/ASparkOfFire/ignis/internal/proto"
+	_ "github.com/breml/rootcerts"
+	_ "github.com/ignis-runtime/net/http"
+	"google.golang.org/protobuf/proto"
 )
 
 type Response struct {
@@ -24,8 +27,17 @@ func NewFDResponse() *Response {
 	}
 }
 
-func Handle(h http.Handler) {
-	b, err := io.ReadAll(os.Stdin)
+func Handle(h http.Handler, stdin io.Reader) {
+	// If no stdin provided, use os.Stdin as fallback
+	if stdin == nil {
+		stdin = os.Stdin
+	}
+
+	HandleWithIO(h, stdin, os.Stdout)
+}
+
+func HandleWithIO(h http.Handler, stdin io.Reader, stdout io.Writer) {
+	b, err := io.ReadAll(stdin)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,7 +70,9 @@ func Handle(h http.Handler) {
 	if err != nil {
 		log.Printf("Error encoding response: %s", err)
 	}
-	n, err := os.Stdout.Write(b)
+
+	// Write to provided stdout
+	n, err := stdout.Write(b)
 	if err != nil || n != len(b) {
 		log.Printf("Error writing response: %s, bytes written: %d", err, n)
 	}

@@ -74,6 +74,9 @@ func buildRequestPayload(c *gin.Context) ([]byte, error) {
 func executeWASM(reqPayload, wasmBytes []byte, cache cache.ModCache[uuid.UUID], engine runtime.RuntimeEngine, id uuid.UUID) (*types.FDResponse, error) {
 	// create a new buffer for output
 	fd := new(bytes.Buffer)
+	
+	// create a reader for the request payload
+	stdin := bytes.NewReader(reqPayload)
 
 	rt, err := runtime.New(context.Background(), runtime.Args{
 		Stdout:       fd,
@@ -91,27 +94,29 @@ func executeWASM(reqPayload, wasmBytes []byte, cache cache.ModCache[uuid.UUID], 
 		script = wasmBytes
 	}
 
-	if err := rt.Invoke(bytes.NewReader(reqPayload), nil, script); err != nil {
+	fmt.Printf("Invoking WASM with payload of size: %d\n", len(reqPayload))
+	if err := rt.Invoke(stdin, nil, script); err != nil {
 		return nil, fmt.Errorf("failed to invoke WASM runtime: %w", err)
 	}
+	fmt.Printf("WASM invocation completed\n")
 
 	responseBytes, err := readStdout(fd)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Read %d bytes from WASM output\n", len(responseBytes))
 
 	return parseWASMResponse(responseBytes)
 }
 
 // readStdout reads and returns data from the in-memory file descriptor.
 func readStdout(fd *bytes.Buffer) ([]byte, error) {
-	buf := make([]byte, 4096) // Adjust buffer size as needed
-	n, err := fd.Read(buf)
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("failed to read response from WASM: %w", err)
+	// Read all data from the buffer
+	data := fd.Bytes()
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no data read from WASM")
 	}
-
-	return buf[:n], nil
+	return data, nil
 }
 
 // parseWASMResponse unmarshals the WASM response into a struct.
